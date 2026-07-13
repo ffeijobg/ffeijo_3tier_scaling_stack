@@ -1,0 +1,38 @@
+# manifests/database/04-service.yaml
+# Two services for Postgres:
+# 1. Headless (ClusterIP: None) — required by StatefulSet for stable DNS per pod
+# 2. ClusterIP — what the backend uses for pooled access
+ 
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-headless
+  namespace: apps
+  labels:
+    app: postgres
+    tier: database
+spec:
+  clusterIP: None
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+      name: postgres
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: apps
+  labels:
+    app: postgres
+    tier: database
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+      name: postgres

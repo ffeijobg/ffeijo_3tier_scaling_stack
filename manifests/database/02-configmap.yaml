@@ -1,0 +1,59 @@
+# manifests/database/02-configmap.yaml
+# PostgreSQL tuning for a KinD-local environment.
+# These params are deliberately conservative — sized for 1-2Gi RAM nodes.
+# For production scale-out, compute with https://pgtune.leopard.in.ua
+ 
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: apps
+  labels:
+    tier: database
+data:
+  postgresql.conf: |
+    # Connections
+    max_connections = 100
+    
+    # Memory (sized for 512Mi container limit)
+    shared_buffers = 128MB
+    effective_cache_size = 384MB
+    work_mem = 4MB
+    maintenance_work_mem = 64MB
+    
+    # WAL / Durability
+    # fsync = on               # leave ON; turning off risks corruption on pod crash
+    wal_buffers = 16MB
+    checkpoint_completion_target = 0.9
+    wal_compression = on
+    
+    # Logging (useful during load tests)
+    log_min_duration_statement = 1000   # log queries > 1s
+    log_connections = on
+    log_disconnections = on
+    log_lock_waits = on
+    
+    # Stats
+    track_io_timing = on
+    track_functions = all
+ 
+  init.sql: |
+    -- Initial schema, runs once at container creation
+    CREATE TABLE IF NOT EXISTS items (
+      id        SERIAL PRIMARY KEY,
+      name      VARCHAR(255) NOT NULL,
+      value     TEXT,
+      created   TIMESTAMPTZ DEFAULT NOW()
+    );
+    
+    -- Index for load test SELECT patterns
+    CREATE INDEX IF NOT EXISTS idx_items_name ON items(name);
+    CREATE INDEX IF NOT EXISTS idx_items_created ON items(created DESC);
+    
+    -- Seed data for read-heavy load tests
+    INSERT INTO items (name, value)
+    SELECT
+      'item-' || i,
+      md5(random()::text)
+    FROM generate_series(1, 1000) i
+    ON CONFLICT DO NOTHING;

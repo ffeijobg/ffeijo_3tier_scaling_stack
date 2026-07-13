@@ -1,0 +1,102 @@
+# manifests/networking/01-network-policies.yaml
+# Defense-in-depth: even if a frontend pod is compromised, it cannot reach
+# Postgres directly. Each tier can only talk to its downstream dependency.
+# Requires Calico (or another CNI that enforces NetworkPolicy).
+ 
+---
+# Default deny all ingress in the namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: apps
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+ 
+---
+# Frontend: accept ingress from ingress controller; egress to backend only
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-network-policy
+  namespace: apps
+spec:
+  podSelector:
+    matchLabels:
+      tier: frontend
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              tier: backend
+      ports:
+        - protocol: TCP
+          port: 8000
+    # DNS resolution — always allow UDP/53 egress or nothing works
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+ 
+---
+# Backend: accept from frontend only; egress to database only
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-network-policy
+  namespace: apps
+spec:
+  podSelector:
+    matchLabels:
+      tier: backend
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              tier: frontend
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              tier: database
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+ 
+---
+# Database: accept from backend only; no egress required
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: database-network-policy
+  namespace: apps
+spec:
+  podSelector:
+    matchLabels:
+      tier: database
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              tier: backend
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress:
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53

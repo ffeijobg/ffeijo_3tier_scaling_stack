@@ -1,0 +1,26 @@
+# ansible/playbooks/site.yml
+# Full host setup — run this once before any Terraform operations.
+ 
+---
+- name: Configure infrastructure host
+  hosts: all
+  become: true
+  gather_facts: true
+ 
+  roles:
+    - common
+    - docker
+    - kind
+ 
+  post_tasks:
+    - name: Verify Docker is running
+      command: docker info
+      changed_when: false
+ 
+    - name: Print tool versions
+      debug:
+        msg: |
+          kind:    {{ lookup('pipe', 'kind version') }}
+          kubectl: {{ lookup('pipe', 'kubectl version --client --short 2>/dev/null') }}
+          helm:    {{ lookup('pipe', 'helm version --short') }}
+          k6:      {{ lookup('pipe', 'k6 version') }}

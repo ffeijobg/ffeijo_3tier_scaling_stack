@@ -1,0 +1,58 @@
+# manifests/00-namespace.yaml
+# Single namespace for all tiers. In a real production setup you'd separate
+# namespaces per tier (or per team) and use NetworkPolicies + RBAC to enforce
+# boundaries. Here we co-locate to simplify service DNS (svc.cluster.local).
+ 
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: apps
+  labels:
+    name: apps
+    environment: local
+---
+# ServiceAccount per tier — never use the default SA.
+# This gives you a hook for future IRSA / Workload Identity without code changes.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: frontend-sa
+  namespace: apps
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backend-sa
+  namespace: apps
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: database-sa
+  namespace: apps
+---
+# Minimal RBAC: backend needs to read its own pod info for graceful drain logic
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backend-role
+  namespace: apps
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backend-role-binding
+  namespace: apps
+subjects:
+  - kind: ServiceAccount
+    name: backend-sa
+    namespace: apps
+roleRef:
+  kind: Role
+  name: backend-role
+  apiGroup: rbac.authorization.k8s.io
+

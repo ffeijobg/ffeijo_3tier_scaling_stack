@@ -1,0 +1,26 @@
+# manifests/frontend/05-pdb.yaml
+# Ensures rolling upgrades, node drains, and cluster upgrades never take
+# ALL pods of a tier offline simultaneously.
+ 
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend-pdb
+  namespace: apps
+spec:
+  minAvailable: 1          # At least 1 pod must be available at all times
+  selector:
+    matchLabels:
+      app: frontend
+---
+# manifests/backend/06-pdb.yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+  namespace: apps
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: backend

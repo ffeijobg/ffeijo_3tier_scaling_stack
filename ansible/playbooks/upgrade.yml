@@ -1,0 +1,80 @@
+# ansible/playbooks/upgrade.yml
+# Run as: ansible-playbook -i inventory/hosts.yml playbooks/upgrade.yml \
+#   -e "target_version=v1.35.0"
+#
+# This playbook orchestrates the kubectl drain/upgrade/uncordon cycle.
+# The Terraform state is updated separately (see upgrade.sh).
+ 
+---
+- name: Cluster upgrade orchestration
+  hosts: all
+  vars:
+    target_version: "v1.35.0"          # Override via -e flag
+    cluster_name: "three-tier"
+    kubeconfig: "~/.kube/three-tier-config"
+  
+  tasks:
+    - name: Verify target version is higher than current
+      command: kubectl get nodes -o jsonpath='{.items[0].status.nodeInfo.kubeletVersion}' --kubeconfig {{ kubeconfig }}
+      register: current_version
+      changed_when: false
+ 
+    - name: Print current version
+      debug:
+        msg: "Current: {{ current_version.stdout }} → Target: {{ target_version }}"
+ 
+    - name: Create pre-upgrade backup of all resources
+      command: >
+        kubectl get all,configmap,secret,pvc,ingress,networkpolicy,hpa,pdb
+        -n apps -o yaml --kubeconfig {{ kubeconfig }}
+      register: pre_upgrade_backup
+      changed_when: false
+ 
+    - name: Save backup to file
+      copy:
+        content: "{{ pre_upgrade_backup.stdout }}"
+        dest: "/tmp/pre-upgrade-backup-{{ ansible_date_time.epoch }}.yaml"
+ 
+    - name: Verify PDB status before drain
+      command: kubectl get pdb -n apps --kubeconfig {{ kubeconfig }}
+      register: pdb_status
+      changed_when: false
+    
+    - name: Display PDB status
+      debug:
+        msg: "{{ pdb_status.stdout }}"
+ 
+    - name: Get list of worker nodes
+      command: kubectl get nodes --selector='!node-role.kubernetes.io/control-plane' -o jsonpath='{.items[*].metadata.name}' --kubeconfig {{ kubeconfig }}
+      register: worker_nodes
+      changed_when: false
+ 
+    - name: Upgrade workers one at a time
+      include_tasks: upgrade-worker.yml
+      loop: "{{ worker_nodes.stdout.split() }}"
+      loop_control:
+        loop_var: worker_node
+ 
+    - name: Upgrade control-plane node
+      include_tasks: upgrade-control-plane.yml
+      vars:
+        target_k8s_version: "{{ target_version }}"
+ 
+    - name: Verify all nodes on new version
+      command: kubectl get nodes --kubeconfig {{ kubeconfig }}
+      register: nodes_post
+      changed_when: false
+ 
+    - name: Print final node status
+      debug:
+        msg: "{{ nodes_post.stdout }}"
+ 
+    - name: Run smoke tests post-upgrade
+      command: "{{ item }}"
+      loop:
+        - "kubectl get pods -n apps --kubeconfig {{ kubeconfig }}"
+        - "kubectl rollout status deploy/frontend -n apps --kubeconfig {{ kubeconfig }}"
+        - "kubectl rollout status deploy/backend -n apps --kubeconfig {{ kubeconfig }}"
+        - "kubectl rollout status statefulset/postgres -n apps --kubeconfig {{ kubeconfig }}"
+      changed_when: false
+

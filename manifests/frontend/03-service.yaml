@@ -1,0 +1,18 @@
+# manifests/frontend/03-service.yaml
+ 
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: apps
+  labels:
+    app: frontend
+    tier: frontend
+spec:
+  type: ClusterIP       # Ingress controller terminates externally; NodePort not needed
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+      targetPort: 80
+      name: http

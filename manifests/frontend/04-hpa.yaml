@@ -1,0 +1,85 @@
+# manifests/frontend/04-hpa.yaml
+# autoscaling/v2 required for multi-metric and behavior tuning.
+# Without behavior tuning, HPA flaps aggressively — you'll see pods scaling
+# up and down every 15s under oscillating load. The stabilization windows here
+# are tuned for load test scenarios.
+ 
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend-hpa
+  namespace: apps
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70      # Target: pods run at 70% of requested CPU
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30          # React quickly to traffic spikes
+      selectPolicy: Max                        # Take the most aggressive recommendation
+      policies:
+        - type: Pods
+          value: 3                             # Add up to 3 pods per period
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300          # Wait 5 minutes before scaling down
+      selectPolicy: Min                        # Take the most conservative recommendation
+      policies:
+        - type: Pods
+          value: 1                             # Remove 1 pod per period (conservative)
+          periodSeconds: 120
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+  namespace: apps
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65      # Lower than frontend: DB connections are expensive
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 45
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120

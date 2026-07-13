@@ -1,0 +1,16 @@
+# manifests/database/05-pdb.yaml
+# With replicas: 1, this PDB prevents voluntary disruptions (node drain, rolling
+# upgrades) from killing Postgres while it's the only instance.
+# This means node drain will BLOCK until you manually delete the PDB or add replicas.
+# That's correct behavior — data availability must be explicit.
+ 
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: postgres-pdb
+  namespace: apps
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: postgres

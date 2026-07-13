@@ -1,0 +1,57 @@
+# ansible/playbooks/upgrade-worker.yml  (included by upgrade.yml)
+ 
+---
+- name: "Cordon worker: {{ worker_node }}"
+  command: kubectl cordon {{ worker_node }} --kubeconfig {{ kubeconfig }}
+  changed_when: true
+ 
+- name: "Drain worker (respects PDBs): {{ worker_node }}"
+  command: >
+    kubectl drain {{ worker_node }}
+    --ignore-daemonsets
+    --delete-emptydir-data
+    --grace-period=30
+    --timeout=120s
+    --kubeconfig {{ kubeconfig }}
+  register: drain_result
+  failed_when: drain_result.rc != 0
+ 
+- name: "Pull new node image: {{ target_version }}"
+  command: docker pull kindest/node:{{ target_version }}
+  changed_when: true
+ 
+- name: "Stop old worker container"
+  command: docker stop {{ cluster_name }}-worker
+  when: "'worker-0' not in worker_node"   # Adjust naming to your cluster topology
+  ignore_errors: true
+ 
+- name: "Replace worker container with new version"
+  shell: |
+    # KinD node containers follow naming: <cluster>-worker, <cluster>-worker2, etc.
+    NODE_CONTAINER="{{ cluster_name }}-{{ worker_node | replace(cluster_name + '-', '') }}"
+    docker stop $NODE_CONTAINER
+    docker rm $NODE_CONTAINER
+    # Re-join via kubeadm (token generated from control plane)
+    JOIN_CMD=$(docker exec {{ cluster_name }}-control-plane kubeadm token create --print-join-command)
+    docker run -d --name $NODE_CONTAINER \
+      --network kind \
+      --hostname {{ worker_node }} \
+      -v /tmp/three-tier-kind/{{ worker_node | replace(cluster_name + '-', '') }}:/var/local-path-provisioner \
+      --privileged \
+      kindest/node:{{ target_version }} \
+      /sbin/init
+    sleep 15
+    docker exec $NODE_CONTAINER sh -c "$JOIN_CMD"
+  changed_when: true
+ 
+- name: "Wait for worker to rejoin: {{ worker_node }}"
+  command: kubectl wait --for=condition=Ready node/{{ worker_node }} --timeout=120s --kubeconfig {{ kubeconfig }}
+  changed_when: false
+ 
+- name: "Uncordon worker: {{ worker_node }}"
+  command: kubectl uncordon {{ worker_node }} --kubeconfig {{ kubeconfig }}
+  changed_when: true
+ 
+- name: Wait for pods to reschedule after uncordon
+  pause:
+    seconds: 30

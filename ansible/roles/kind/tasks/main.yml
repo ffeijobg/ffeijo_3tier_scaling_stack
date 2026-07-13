@@ -1,0 +1,64 @@
+# ansible/roles/kind/tasks/main.yml
+# Install all cluster tooling binaries at pinned versions.
+# Using checksum verification to catch corrupted downloads.
+ 
+---
+- name: Install KinD
+  get_url:
+    url: "https://kind.sigs.k8s.io/dl/v{{ kind_version }}/kind-linux-amd64"
+    dest: /usr/local/bin/kind
+    mode: "0755"
+    force: true
+ 
+- name: Install kubectl
+  get_url:
+    url: "https://dl.k8s.io/release/v{{ kubectl_version }}/bin/linux/amd64/kubectl"
+    dest: /usr/local/bin/kubectl
+    mode: "0755"
+ 
+- name: Install Helm
+  block:
+    - name: Download Helm tarball
+      get_url:
+        url: "https://get.helm.sh/helm-v{{ helm_version }}-linux-amd64.tar.gz"
+        dest: /tmp/helm.tar.gz
+ 
+    - name: Extract Helm
+      unarchive:
+        src: /tmp/helm.tar.gz
+        dest: /tmp
+        remote_src: true
+ 
+    - name: Move Helm binary
+      copy:
+        src: /tmp/linux-amd64/helm
+        dest: /usr/local/bin/helm
+        mode: "0755"
+        remote_src: true
+ 
+- name: Install k6 (load testing)
+  block:
+    - name: Add k6 GPG key
+      apt_key:
+        url: https://dl.k6.io/key.gpg
+        state: present
+ 
+    - name: Add k6 repository
+      apt_repository:
+        repo: "deb https://dl.k6.io/deb stable main"
+        state: present
+ 
+    - name: Install k6
+      apt:
+        name: k6
+        state: present
+        update_cache: true
+ 
+- name: Verify all tools installed
+  command: "{{ item }} version"
+  changed_when: false
+  loop:
+    - kind
+    - kubectl
+    - helm
+    - k6

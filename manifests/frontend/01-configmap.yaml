@@ -1,0 +1,88 @@
+# manifests/frontend/01-configmap.yaml
+# nginx config is embedded in a ConfigMap and mounted as a volume.
+# This decouples config changes from image rebuilds — update the ConfigMap,
+# then rolling-restart the Deployment: kubectl rollout restart deploy/frontend
+ 
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: apps
+  labels:
+    tier: frontend
+data:
+  default.conf: |
+    # Upstream pool: nginx load-balances across all backend pods via kube-dns.
+    # kube-proxy round-robins at the Service level, nginx provides app-level retries.
+    upstream backend_pool {
+      server backend-service:8000;
+      keepalive 32;         # Keep persistent connections to backend to reduce TCP overhead
+    }
+ 
+    server {
+      listen 80;
+      server_name _;
+ 
+      # Compression: reduces bandwidth, speeds up response for JSON payloads
+      gzip on;
+      gzip_types application/json text/plain text/html application/javascript text/css;
+      gzip_min_length 1024;
+ 
+      # Static content — served directly by nginx (fast path)
+      location / {
+        root /usr/share/nginx/html;
+        index index.html;
+        try_files $uri $uri/ /index.html;
+        
+        # Cache static assets aggressively; revalidate HTML
+        add_header Cache-Control "public, max-age=3600";
+      }
+ 
+      # API proxy — forward to FastAPI backend
+      location /api/ {
+        proxy_pass         http://backend_pool;
+        proxy_http_version 1.1;
+        proxy_set_header   Connection "";            # Required for keepalive upstreams
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP $remote_addr;
+        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+ 
+        # Timeouts: balance between fast failure detection and slow query tolerance
+        proxy_connect_timeout 5s;
+        proxy_send_timeout    30s;
+        proxy_read_timeout    30s;
+ 
+        # Retry on backend connection failure (NOT on 5xx — that could cause double-writes)
+        proxy_next_upstream error timeout;
+        proxy_next_upstream_tries 2;
+      }
+ 
+      # Health endpoint: never proxied, never cached, no auth.
+      # Used by liveness/readiness probes AND external load balancers.
+      location /health {
+        access_log off;
+        return 200 '{"status":"ok","tier":"frontend"}';
+        add_header Content-Type application/json;
+      }
+ 
+      # Basic nginx status (for Prometheus nginx-exporter)
+      location /nginx_status {
+        stub_status on;
+        access_log off;
+        allow 10.0.0.0/8;   # Only from cluster CIDR
+        deny all;
+      }
+    }
+ 
+  # Basic HTML index for the frontend
+  index.html: |
+    <!DOCTYPE html>
+    <html>
+    <head><title>Three-Tier App</title></head>
+    <body>
+      <h1>Frontend (nginx)</h1>
+      <p>API endpoint: <a href="/api/items">/api/items</a></p>
+      <p>Stats: <a href="/api/stats">/api/stats</a></p>
+    </body>
+    </html>

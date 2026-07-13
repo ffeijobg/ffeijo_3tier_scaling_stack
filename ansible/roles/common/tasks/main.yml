@@ -1,0 +1,55 @@
+# ansible/roles/common/tasks/main.yml
+# Kernel-level prerequisites for running KinD and Kubernetes.
+# These are often the root cause of cryptic kubelet failures on fresh machines.
+ 
+---
+- name: Disable swap immediately
+  command: swapoff -a
+  changed_when: false
+ 
+- name: Disable swap in fstab (persistent)
+  replace:
+    path: /etc/fstab
+    regexp: '^([^#].*\sswap\s+sw\s.*)$'
+    replace: '# \1'
+ 
+# inotify limits: KinD creates many watchers per node container.
+# Without these, you get "too many open files" errors that are very hard to diagnose.
+- name: Set kernel parameters for Kubernetes + KinD
+  sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: true
+    sysctl_file: /etc/sysctl.d/99-kubernetes.conf
+  loop:
+    - { key: "net.bridge.bridge-nf-call-iptables",  value: "1" }
+    - { key: "net.bridge.bridge-nf-call-ip6tables", value: "1" }
+    - { key: "net.ipv4.ip_forward",                 value: "1" }
+    - { key: "fs.inotify.max_user_watches",          value: "524288" }
+    - { key: "fs.inotify.max_user_instances",        value: "512" }
+    - { key: "fs.inotify.max_queued_events",         value: "16384" }
+    - { key: "vm.max_map_count",                     value: "262144" }
+    - { key: "kernel.pid_max",                       value: "4194304" }
+ 
+- name: Load br_netfilter module
+  modprobe:
+    name: br_netfilter
+    state: present
+ 
+- name: Persist br_netfilter module load
+  copy:
+    content: "br_netfilter\n"
+    dest: /etc/modules-load.d/br_netfilter.conf
+ 
+# Create PVC backing directories on host (Terraform extra_mounts point here)
+- name: Create KinD PVC backing directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0777"
+  loop:
+    - /tmp/three-tier-kind/control-plane
+    - /tmp/three-tier-kind/worker-0
+    - /tmp/three-tier-kind/worker-1
+    - /tmp/three-tier-kind/worker-2

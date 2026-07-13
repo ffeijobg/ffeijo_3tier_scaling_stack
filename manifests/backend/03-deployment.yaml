@@ -1,0 +1,129 @@
+# manifests/backend/03-deployment.yaml
+ 
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: apps
+  labels:
+    app: backend
+    tier: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0     # Zero-downtime: always bring up new pods before killing old ones
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: backend
+        tier: backend
+    spec:
+      serviceAccountName: backend-sa
+      terminationGracePeriodSeconds: 30
+      
+      # For local dev: in production use an image registry (ECR, GCR, Artifact Registry)
+      # and remove hostNetwork. Here we build locally and load into KinD:
+      #   docker build -t backend:local manifests/backend/app/
+      #   kind load docker-image backend:local --name three-tier
+      
+      affinity:
+        podAntiAffinity:
+          # preferredDuring: spread pods across nodes when possible, but don't hard-fail
+          # if there aren't enough nodes. For production, use requiredDuring.
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values: [backend]
+                topologyKey: kubernetes.io/hostname
+ 
+      initContainers:
+        # Wait for Postgres before starting — prevents CrashLoopBackOff on cold start
+        - name: wait-for-db
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z postgres-service 5432; do
+                echo "Waiting for postgres-service:5432..."
+                sleep 2
+              done
+              echo "Postgres is reachable"
+ 
+      containers:
+        - name: backend
+          image: backend:local        # Built and loaded into KinD; see bootstrap.sh
+          imagePullPolicy: Never      # Use Never for locally-loaded images
+          ports:
+            - containerPort: 8000
+              name: http
+          
+          env:
+            - name: DB_HOST
+              value: postgres-service
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_DB
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_USER
+            - name: DB_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+            - name: DB_POOL_MIN
+              value: "1"
+            - name: DB_POOL_MAX
+              value: "5"
+          
+          resources:
+            requests:
+              cpu: "100m"       # HPA reads requests, not limits
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            failureThreshold: 3
+            timeoutSeconds: 3
+          
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 5
+          
+          # Startup probe: gives the app up to 5 * 12 = 60s to start.
+          # Prevents premature liveness failures during slow cold starts (e.g., DB migration).
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            failureThreshold: 12
+            periodSeconds: 5
