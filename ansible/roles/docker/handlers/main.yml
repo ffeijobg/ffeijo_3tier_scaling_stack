@@ -1,0 +1,7 @@
+# ansible/roles/docker/handlers/main.yml
+---
+- name: restart docker
+  systemd:
+    name: docker
+    state: restarted
+    daemon_reload: true

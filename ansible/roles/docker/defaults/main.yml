@@ -1,0 +1,6 @@
+# ansible/roles/docker/defaults/main.yml
+# Docker's apt repo only publishes for stable Debian releases. Hosts running
+# testing/unstable (e.g. codename "forky"/"trixie" pre-release, "sid") don't
+# have a matching suite upstream, so pin to the latest stable codename that
+# does, rather than trusting ansible_lsb.codename.
+docker_apt_codename: bookworm

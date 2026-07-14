@@ -16,14 +16,22 @@
     state: present
     update_cache: true
  
+- name: Create keyrings directory
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
 - name: Add Docker GPG key
-  apt_key:
-    url: https://download.docker.com/linux/ubuntu/gpg
-    state: present
- 
+  get_url:
+    url: https://download.docker.com/linux/debian/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+    force: true
+
 - name: Add Docker repository
   apt_repository:
-    repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_lsb.codename }} stable"
+    repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian {{ docker_apt_codename }} stable"
     state: present
  
 - name: Install Docker CE
@@ -59,6 +67,6 @@
  
 - name: Add current user to docker group
   user:
-    name: "{{ ansible_user }}"
+    name: "{{ ansible_facts['user_id'] }}"
     groups: docker
     append: true

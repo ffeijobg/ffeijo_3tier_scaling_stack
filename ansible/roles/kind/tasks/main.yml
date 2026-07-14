@@ -15,6 +15,7 @@
     url: "https://dl.k8s.io/release/v{{ kubectl_version }}/bin/linux/amd64/kubectl"
     dest: /usr/local/bin/kubectl
     mode: "0755"
+    force: true
  
 - name: Install Helm
   block:
@@ -22,6 +23,7 @@
       get_url:
         url: "https://get.helm.sh/helm-v{{ helm_version }}-linux-amd64.tar.gz"
         dest: /tmp/helm.tar.gz
+        force: true
  
     - name: Extract Helm
       unarchive:
@@ -38,27 +40,30 @@
  
 - name: Install k6 (load testing)
   block:
-    - name: Add k6 GPG key
-      apt_key:
-        url: https://dl.k6.io/key.gpg
-        state: present
+    - name: Download k6 tarball
+      get_url:
+        url: "https://github.com/grafana/k6/releases/download/v{{ k6_version }}/k6-v{{ k6_version }}-linux-amd64.tar.gz"
+        dest: /tmp/k6.tar.gz
+        force: true
+
+    - name: Extract k6
+      unarchive:
+        src: /tmp/k6.tar.gz
+        dest: /tmp
+        remote_src: true
  
-    - name: Add k6 repository
-      apt_repository:
-        repo: "deb https://dl.k6.io/deb stable main"
-        state: present
- 
-    - name: Install k6
-      apt:
-        name: k6
-        state: present
-        update_cache: true
+    - name: Move k6 binary
+      copy:
+        src: "/tmp/k6-v{{ k6_version }}-linux-amd64/k6"
+        dest: /usr/local/bin/k6
+        mode: "0755"
+        remote_src: true
  
 - name: Verify all tools installed
-  command: "{{ item }} version"
+  command: "{{ item }}"
   changed_when: false
   loop:
-    - kind
-    - kubectl
-    - helm
-    - k6
+    - kind version
+    - kubectl version --client
+    - helm version
+    - k6 version

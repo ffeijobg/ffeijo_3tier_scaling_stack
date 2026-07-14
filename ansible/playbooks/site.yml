@@ -5,7 +5,22 @@
 - name: Configure infrastructure host
   hosts: all
   become: true
-  gather_facts: true
+  gather_facts: false
+
+  pre_tasks:
+    # Minimal/fresh Debian installs may lack python3 entirely, which gather_facts
+    # and every other Ansible module require — raw is the one module that doesn't.
+    - name: Bootstrap Python 3 if missing
+      raw: which python3 || (apt-get update -qq && apt-get install -y python3)
+      changed_when: false
+
+    - name: Gather facts now that Python 3 is available
+      setup:
+
+    # The apt module needs python3-apt specifically; python3 alone isn't enough.
+    - name: Ensure python3-apt is present
+      raw: dpkg -s python3-apt >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y python3-apt)
+      changed_when: false
  
   roles:
     - common
@@ -21,6 +36,6 @@
       debug:
         msg: |
           kind:    {{ lookup('pipe', 'kind version') }}
-          kubectl: {{ lookup('pipe', 'kubectl version --client --short 2>/dev/null') }}
+          kubectl: {{ lookup('pipe', 'kubectl version --client 2>/dev/null') }}
           helm:    {{ lookup('pipe', 'helm version --short') }}
           k6:      {{ lookup('pipe', 'k6 version') }}
