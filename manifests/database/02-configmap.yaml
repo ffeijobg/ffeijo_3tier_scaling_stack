@@ -13,6 +13,11 @@ metadata:
 data:
   postgresql.conf: |
     # Connections
+    # listen_addresses must be set explicitly: passing config_file= directly
+    # to postgres bypasses the docker-entrypoint's normal auto-injection of
+    # listen_addresses='*', so without this the server only binds to
+    # localhost and every other pod gets "connection refused" on :5432.
+    listen_addresses = '*'
     max_connections = 100
     
     # Memory (sized for 512Mi container limit)

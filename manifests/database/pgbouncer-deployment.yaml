@@ -25,35 +25,35 @@ spec:
     spec:
       containers:
         - name: pgbouncer
-          image: bitnami/pgbouncer:1.23.0
+          image: edoburu/pgbouncer:v1.25.2-p0
           ports:
             - containerPort: 5432
           env:
-            - name: POSTGRESQL_HOST
+            - name: DB_HOST
               value: postgres-service
-            - name: POSTGRESQL_PORT
-              value: "5432"
-            - name: POSTGRESQL_DATABASE
+            - name: DB_NAME
               valueFrom:
                 secretKeyRef:
                   name: postgres-secret
                   key: POSTGRES_DB
-            - name: POSTGRESQL_USERNAME
+            - name: DB_USER
               valueFrom:
                 secretKeyRef:
                   name: postgres-secret
                   key: POSTGRES_USER
-            - name: POSTGRESQL_PASSWORD
+            - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: postgres-secret
                   key: POSTGRES_PASSWORD
-            - name: PGBOUNCER_POOL_MODE
+            - name: POOL_MODE
               value: transaction       # transaction pooling: best for short-lived queries
-            - name: PGBOUNCER_MAX_CLIENT_CONN
+            - name: MAX_CLIENT_CONN
               value: "200"
-            - name: PGBOUNCER_DEFAULT_POOL_SIZE
+            - name: DEFAULT_POOL_SIZE
               value: "20"
+            - name: AUTH_TYPE
+              value: scram-sha-256     # matches Postgres 16's default password encryption
           resources:
             requests:
               cpu: "50m"
