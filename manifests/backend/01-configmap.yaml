@@ -1,0 +1,18 @@
+# manifests/backend/01-configmap.yaml
+# Non-secret backend runtime config. DB connection *credentials* stay in
+# database/01-secret.yaml (postgres-secret) — this only holds tunables that
+# app.py already reads from the environment (see DB_POOL_MIN/DB_POOL_MAX in
+# manifests/backend/app/app.py). Update the ConfigMap, then roll the
+# Deployment to pick up changes: kubectl rollout restart deploy/backend
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: apps
+  labels:
+    app: backend
+    tier: backend
+data:
+  DB_POOL_MIN: "1"
+  DB_POOL_MAX: "5"      # Per-process ceiling; see max_connections math in database/pgbouncer-deployment.yaml

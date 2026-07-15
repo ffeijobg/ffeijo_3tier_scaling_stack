@@ -30,6 +30,11 @@ ENV PYTHONDONTWRITEBYTECODE=1
  
 EXPOSE 8000
  
-# 4 workers: rule of thumb is (2 * CPU_cores) + 1, tuned for 500m CPU limit
+# 1 worker: endpoints run as plain `def` (see app.py), so FastAPI already
+# offloads blocking DB calls to its own thread pool instead of the event
+# loop — concurrency comes from that, not from OS-level multiprocessing.
+# Horizontal scaling is HPA's job (backend-hpa); running multiple workers
+# per pod on top of that just splits the pod's CPU limit into starved
+# fractions instead of adding real parallelism.
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", \
-     "--workers", "4", "--access-log", "--log-level", "info"]
+     "--workers", "1", "--access-log", "--log-level", "info"]

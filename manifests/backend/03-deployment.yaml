@@ -47,18 +47,18 @@ spec:
                 topologyKey: kubernetes.io/hostname
  
       initContainers:
-        # Wait for Postgres before starting — prevents CrashLoopBackOff on cold start
+        # Wait for PgBouncer (the actual DB_HOST the app connects to) before starting
         - name: wait-for-db
           image: busybox:1.36
           command:
             - sh
             - -c
             - |
-              until nc -z postgres-service 5432; do
-                echo "Waiting for postgres-service:5432..."
+              until nc -z pgbouncer-service 5432; do
+                echo "Waiting for pgbouncer-service:5432..."
                 sleep 2
               done
-              echo "Postgres is reachable"
+              echo "PgBouncer is reachable"
  
       containers:
         - name: backend
@@ -70,7 +70,7 @@ spec:
           
           env:
             - name: DB_HOST
-              value: postgres-service
+              value: pgbouncer-service
             - name: DB_PORT
               value: "5432"
             - name: DB_NAME
@@ -88,18 +88,17 @@ spec:
                 secretKeyRef:
                   name: postgres-secret
                   key: POSTGRES_PASSWORD
-            - name: DB_POOL_MIN
-              value: "1"
-            - name: DB_POOL_MAX
-              value: "5"
-          
+          envFrom:
+            - configMapRef:
+                name: backend-config    # DB_POOL_MIN / DB_POOL_MAX
+
           resources:
             requests:
-              cpu: "100m"       # HPA reads requests, not limits
+              cpu: "150m"       # HPA reads requests, not limits — sized for 1 worker
               memory: "128Mi"
             limits:
               cpu: "500m"
-              memory: "256Mi"
+              memory: "384Mi"
           
           livenessProbe:
             httpGet:

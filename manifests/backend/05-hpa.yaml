@@ -1,0 +1,45 @@
+# manifests/backend/05-hpa.yaml
+# See manifests/frontend/04-hpa.yaml for the autoscaling/v2 + behavior tuning
+# rationale. Backend scales more conservatively than frontend because each new
+# pod opens up to DB_POOL_MAX DB connections (see backend-config) — headroom
+# is bounded by Postgres's max_connections and absorbed by
+# database/pgbouncer-deployment.yaml.
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+  namespace: apps
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65      # Lower than frontend: DB connections are expensive
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 45
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120

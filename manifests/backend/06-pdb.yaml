@@ -1,0 +1,15 @@
+# manifests/backend/06-pdb.yaml
+# See manifests/frontend/05-pdb.yaml for the rationale — ensures rolling
+# upgrades, node drains, and cluster upgrades never take all backend pods
+# offline simultaneously.
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+  namespace: apps
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: backend

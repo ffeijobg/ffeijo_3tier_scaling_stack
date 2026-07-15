@@ -97,7 +97,7 @@ async def health():
  
  
 @app.get("/ready")
-async def ready():
+def ready():
     """Readiness probe — can we serve traffic? Requires DB connectivity."""
     if _connection_pool is None:
         raise HTTPException(status_code=503, detail="Connection pool not initialized")
@@ -115,7 +115,7 @@ async def ready():
  
 # ─── Application endpoints ────────────────────────────────────────────────────
 @app.get("/api/items")
-async def get_items(limit: int = 50, offset: int = 0):
+def get_items(limit: int = 50, offset: int = 0):
     conn = _connection_pool.getconn()
     try:
         cur = conn.cursor()
@@ -140,7 +140,7 @@ async def get_items(limit: int = 50, offset: int = 0):
  
  
 @app.post("/api/items")
-async def create_item(name: str, value: str = ""):
+def create_item(name: str, value: str = ""):
     conn = _connection_pool.getconn()
     try:
         cur = conn.cursor()
@@ -161,7 +161,7 @@ async def create_item(name: str, value: str = ""):
  
  
 @app.get("/api/stats")
-async def db_stats():
+def db_stats():
     """Endpoint used by load tests to observe DB behavior under pressure."""
     conn = _connection_pool.getconn()
     try:
