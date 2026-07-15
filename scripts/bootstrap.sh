@@ -53,7 +53,10 @@ kind load docker-image backend:local --name "${CLUSTER_NAME}"
 echo ""
 echo "=== [5/7] Apply Kubernetes manifests ==="
 kubectl apply -f "${MANIFESTS_DIR}/00-namespace.yaml"
- 
+
+echo "  → Networking..."
+kubectl apply -f "${MANIFESTS_DIR}/networking/"
+
 echo "  → Database tier..."
 kubectl apply -f "${MANIFESTS_DIR}/database/"
  
@@ -62,9 +65,6 @@ kubectl apply -f "${MANIFESTS_DIR}/backend/"
  
 echo "  → Frontend tier..."
 kubectl apply -f "${MANIFESTS_DIR}/frontend/"
- 
-echo "  → Networking..."
-kubectl apply -f "${MANIFESTS_DIR}/networking/"
  
 # Step 6: Wait for all pods
 echo ""
@@ -78,8 +78,14 @@ echo ""
 echo "=== [7/7] Smoke tests ==="
 sleep 5  # Brief settle time
  
-FRONTEND_RESPONSE=$(curl -sf http://localhost:8080/health | jq -r '.status' 2>/dev/null || echo "FAIL")
-BACKEND_RESPONSE=$(curl -sf http://localhost:8080/api/items | jq -r '.count' 2>/dev/null || echo "FAIL")
+# The Ingress rule (manifests/networking/02-ingress.yaml) matches on
+# Host: three-tier.local, not "localhost" — --resolve pins that hostname to
+# 127.0.0.1 for this request only, so nginx routes to frontend-service
+# instead of falling through to its default 404 backend. No /etc/hosts
+# edit needed, so this stays portable across machines/CI.
+CURL_OPTS=(-sf --resolve "three-tier.local:8080:127.0.0.1")
+FRONTEND_RESPONSE=$(curl "${CURL_OPTS[@]}" "http://three-tier.local:8080/health" | jq -r '.status' 2>/dev/null || echo "FAIL")
+BACKEND_RESPONSE=$(curl "${CURL_OPTS[@]}" "http://three-tier.local:8080/api/items" | jq -r '.count' 2>/dev/null || echo "FAIL")
  
 echo "  Frontend health: ${FRONTEND_RESPONSE}"
 echo "  Backend items:   ${BACKEND_RESPONSE}"
