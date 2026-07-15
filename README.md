@@ -53,11 +53,14 @@ Ansible prepares the Docker host (kernel sysctls, Docker Engine, pinned tool ver
 | `frontend/01-configmap.yaml` | nginx config — proxies `/api/` to `backend-service:8000`, gzip/keepalive, `/health`, CIDR-restricted `/nginx_status` |
 | `frontend/02-deployment.yaml` | nginx:1.27-alpine, 2 replicas, `maxUnavailable:0/maxSurge:1`, pod anti-affinity, `preStop: sleep 3 && nginx -s quit` |
 | `frontend/03-service.yaml` | ClusterIP :80 |
-| `frontend/04-hpa.yaml` | **HPAs for both frontend (2–10 replicas, CPU 70%/mem 80%) and backend (2–8 replicas, CPU 65%/mem 75%)** |
-| `frontend/05-pdb.yaml` | **PDBs for both frontend and backend**, `minAvailable: 1` |
-| `backend/03-deployment.yaml` | FastAPI (`backend:local`, built and `kind load`-ed locally, not registry-pulled), 2 replicas, initContainer polls `pgbouncer-service:5432` (the actual `DB_HOST`), env from `postgres-secret`, `DB_POOL_MIN=1`/`MAX=5`, resources sized for a single-worker pod (`requests: cpu 150m/mem 128Mi`, `limits: cpu 500m/mem 384Mi`) |
+| `frontend/04-hpa.yaml` | Frontend HPA: 2–10 replicas, CPU 70%/mem 80%, aggressive scale-up (`+3 pods/60s`) / conservative scale-down (`-1 pod/120s` after a 5min stabilization window) |
+| `frontend/05-pdb.yaml` | Frontend PDB, `minAvailable: 1` |
+| `backend/01-configmap.yaml` | `backend-config` — `DB_POOL_MIN=1`/`DB_POOL_MAX=5` (per-process ceiling; see the connection-count math in `database/pgbouncer-deployment.yaml`) |
+| `backend/02-secret.yaml` | intentionally empty — the backend has no credentials of its own; it authenticates to Postgres using `postgres-secret` (owned by the database tier) via `secretKeyRef` in `03-deployment.yaml` |
+| `backend/03-deployment.yaml` | FastAPI (`backend:local`, built and `kind load`-ed locally, not registry-pulled), 2 replicas, initContainer polls `pgbouncer-service:5432` (the actual `DB_HOST`), env from `postgres-secret`, resources sized for a single-worker pod (`requests: cpu 150m/mem 128Mi`, `limits: cpu 500m/mem 384Mi`) |
 | `backend/04-service.yaml` | ClusterIP :8000 |
-| `backend/01-configmap.yaml`, `02-secret.yaml`, `05-hpa.yaml`, `06-pdb.yaml` | present but **empty placeholders** — the real backend HPA/PDB live in `frontend/04-hpa.yaml`/`05-pdb.yaml` instead |
+| `backend/05-hpa.yaml` | Backend HPA: 2–8 replicas, CPU 65%/mem 75% — lower/more conservative than frontend's, since each pod's DB connections are bounded by Postgres's `max_connections` via PgBouncer |
+| `backend/06-pdb.yaml` | Backend PDB, `minAvailable: 1` |
 | `database/01-secret.yaml` | `postgres-secret` (`appuser`/`apppassword`/`appdb`, base64 — explicitly lab-only, not production-safe) |
 | `database/02-configmap.yaml` | tuned `postgresql.conf` (`listen_addresses='*'` — required because passing `config_file=` directly bypasses the postgres image's usual auto-injection of this, otherwise Postgres only binds loopback and every other pod gets connection-refused; `max_connections=100`, `shared_buffers=128MB`) + `init.sql` seeding an `items` table with 1000 rows for load testing |
 | `database/03-statefulset.yaml` | postgres:16-alpine, **1 replica** (StatefulSet chosen for stable DNS/ordered lifecycle/per-pod PVC), `chown 999:999` initContainer, liveness via `pg_isready`, readiness via `pg_isready` + `SELECT 1 FROM items`, 10Gi PVC on `storageClassName: standard` |
@@ -74,7 +77,7 @@ Every tier has its own ServiceAccount, pod anti-affinity (preferred), zero-downt
   - `GET /health` — liveness, no DB dependency.
   - `GET /ready` — readiness, runs `SELECT 1`.
   - `GET/POST /api/items` — CRUD against the seeded `items` table.
-  - `GET /api/stats` — item count, active DB connections (`pg_stat_activity`), DB size — used by load tests to correlate traffic with DB pressure.
+  - `GET /api/stats` — item count, active DB connections (`pg_stat_activity`), DB size — useful for correlating traffic with DB pressure (e.g. from `scripts/scale-observe.sh` or manual polling) now that no bundled load generator drives this automatically.
   - All DB-touching endpoints are plain `def`, not `async def` — `psycopg2` is a blocking driver, and FastAPI/Starlette automatically runs synchronous path functions in a thread pool instead of on the event loop, so one blocking DB call can't stall every other in-flight request on the same worker.
   - Run via uvicorn with **1 worker** (concurrency comes from the thread pool above plus HPA's pod-level scaling, not OS-level multiprocessing — running multiple workers per pod on top of HPA was found to just split each pod's CPU limit into starved fractions without adding real parallelism); multi-stage `python:3.12-slim` Dockerfile, non-root `appuser`.
 
