@@ -95,7 +95,26 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+    # Postgres itself must accept the inbound side of pgbouncer's egress below —
+    # pgbouncer is tier: database, not tier: backend, so it needs its own rule.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: pgbouncer
+      ports:
+        - protocol: TCP
+          port: 5432
   egress:
+    # This selector also matches the pgbouncer pod (tier: database) — it needs
+    # to reach the real Postgres pod on 5432; plain postgres has no outbound
+    # peer here so this rule is a no-op for it.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
     - to: []
       ports:
         - protocol: UDP
