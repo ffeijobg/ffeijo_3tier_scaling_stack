@@ -12,15 +12,4 @@ spec:
   selector:
     matchLabels:
       app: frontend
----
-# manifests/backend/06-pdb.yaml
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: backend-pdb
-  namespace: apps
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      app: backend
+# backend-pdb lives in manifests/backend/06-pdb.yaml
